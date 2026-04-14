@@ -71,12 +71,33 @@ def _run_build(args: argparse.Namespace) -> int:
 
     # Apply ability-tree nodes (if any) to the spell engine for display.
     atree_node_names = [s.strip() for s in args.atree.split(",") if s.strip()]
+    toggle_names = [s.strip() for s in (args.toggles or "").split(",") if s.strip()]
+    slider_pairs: dict[str, float] = {}
+    for raw in (args.sliders or "").split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        if "=" not in raw:
+            print(f"warning: --sliders entry '{raw}' missing '='", file=sys.stderr)
+            continue
+        name, _, value = raw.partition("=")
+        try:
+            slider_pairs[name.strip()] = float(value.strip())
+        except ValueError:
+            print(f"warning: --sliders value '{value}' not numeric", file=sys.stderr)
+
     atree_applied = None
     if atree_node_names:
-        atree_applied = apply_atree(args.wclass, atree_node_names, spells)
+        atree_applied = apply_atree(args.wclass, atree_node_names, spells,
+                                     active_toggles=toggle_names,
+                                     sliders=slider_pairs)
         spells = {**spells, **atree_applied.spells}
         print(f"\nAbility tree active ({len(atree_node_names)} nodes): "
               f"{', '.join(atree_node_names)}")
+        if toggle_names:
+            print(f"  Toggles ON: {', '.join(toggle_names)}")
+        if slider_pairs:
+            print(f"  Sliders: {slider_pairs}")
 
     for i, r in enumerate(results, 1):
         print(f"\n=== Build #{i} — melee DPS: {r.dps:,.0f} ===")
@@ -234,6 +255,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="Comma-separated ability-tree node names to apply "
                         "(e.g. 'Bow Proficiency,Thunder Mastery,Arrow Storm'). "
                         "Use 'wynn-dps atree --class X' to list nodes.")
+    b.add_argument("--toggles", default="",
+                   help="Comma-separated atree toggle names to enable "
+                        "(e.g. 'Initiator,Divine Intervention Arrow Storm').")
+    b.add_argument("--sliders", default="",
+                   help="Comma-separated slider_name=value pairs "
+                        "(e.g. 'Hits dealt=60,Focus=3').")
     b.add_argument("--refresh", action="store_true")
 
     a = sub.add_parser("atree", help="List ability-tree nodes for a class.")

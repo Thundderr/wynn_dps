@@ -197,6 +197,7 @@ def _compute_part_damage(
     use_atkspd: bool = True,
     use_str: bool = True,
     ignored_mults: Sequence[str] = (),
+    part_filter: str | None = None,         # e.g. "0.Single Shot"
 ) -> float:
     """Average per-cast damage for one spell part (or melee).
 
@@ -336,11 +337,15 @@ def _compute_part_damage(
     for k, v in mults.items():
         if k in ignored_mults:
             continue
+        # Part-scoped: "damMult.<SpellName>:<basespell>.<PartName>".
+        # Apply only if this call's part_filter matches the suffix after ":".
         if ":" in k:
-            # part-scoped, handled per-spell-part in caller (skip here)
-            continue
+            scope = k.split(":", 1)[1]
+            if part_filter is None or scope != part_filter:
+                continue
         if ";" in k:
-            elem_match = elem_letter.index(k.split(";")[1]) if k.split(";")[1] in elem_letter else -1
+            tag = k.split(";")[1]
+            elem_match = elem_letter.index(tag) if tag in elem_letter else -1
             if elem_match >= 0:
                 ele_damage_mult[elem_match] *= 1.0 + v / 100.0
             continue
@@ -392,11 +397,14 @@ def evaluate_spell(build: Build, spell: "Spell") -> dict[str, float]:
                 total += results.get(src_name, 0.0) * float(mult)
             results[part.name] = total
         else:
+            # Part filter for damMult scoping: "<base_spell>.<PartName>".
+            part_filter = f"{spell.slot}.{part.name}"
             d = _compute_part_damage(
                 build, part.multipliers,
                 use_spell_damage=use_spell_dmg,
                 use_atkspd=use_atkspd,
                 use_str=part.use_str,
+                part_filter=part_filter,
             )
             results[part.name] = d
     return results

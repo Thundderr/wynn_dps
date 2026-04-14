@@ -142,7 +142,18 @@ def _short_to_v3(short: str) -> str | None:
     return None
 
 
-def _accumulate_raw_stat(applied: AtreeApplied, eff: dict[str, Any]) -> None:
+def _accumulate_raw_stat(
+    applied: AtreeApplied, eff: dict[str, Any],
+    active_toggles: set[str] | None = None,
+) -> None:
+    """Accumulate a raw_stat effect's bonuses.
+
+    If the effect has a `toggle` field, only apply if that toggle is in
+    `active_toggles`. Untoggled (always-on) effects always apply.
+    """
+    toggle = eff.get("toggle")
+    if toggle is not None and (not active_toggles or toggle not in active_toggles):
+        return
     for b in eff.get("bonuses", []):
         if b.get("type") != "stat":
             continue
@@ -150,7 +161,6 @@ def _accumulate_raw_stat(applied: AtreeApplied, eff: dict[str, Any]) -> None:
         value = b.get("value")
         if not isinstance(name, str):
             continue
-        # Skip dynamic/conditional bonuses (string values reference props).
         if not isinstance(value, (int, float)):
             continue
         v = float(value)
@@ -162,7 +172,6 @@ def _accumulate_raw_stat(applied: AtreeApplied, eff: dict[str, Any]) -> None:
         if v3 is not None:
             applied.stat_bonuses[v3] = applied.stat_bonuses.get(v3, 0.0) + v
         else:
-            # Keep flat-additive raw fields like tDamAddMin under their short name.
             applied.raw_short_bonuses[name] = applied.raw_short_bonuses.get(name, 0.0) + v
 
 
@@ -277,10 +286,62 @@ def _resolve_parts(parts: list[dict[str, Any]], props: dict[str, Any],
     return out
 
 
+def _accumulate_stat_scaling(
+    applied: AtreeApplied, eff: dict[str, Any], sliders: dict[str, float],
+) -> None:
+    """Apply a stat_scaling effect.
+
+    Only `slider: true` effects with a damage-relevant `output.name` are
+    applied here. The user supplies the slider value via the `sliders` dict.
+    Scaling = clamp(slider_value × scaling[0], 0, max). Input-driven
+    auto-scaling (no slider) is skipped — those depend on circular state we
+    don't track in v1.
+    """
+    if not eff.get("slider"):
+        return
+    name = eff.get("slider_name")
+    if not name or name not in sliders:
+        return
+    value = float(sliders[name])
+    slider_max = eff.get("slider_max")
+    if slider_max is not None:
+        value = min(value, float(slider_max))
+    scaling = eff.get("scaling") or [0]
+    if not scaling:
+        return
+    out = eff.get("output")
+    if not isinstance(out, dict) or out.get("type") != "stat":
+        return  # prop outputs (Misdirection.tricks etc.) skipped in v1
+    out_name = out.get("name")
+    if not isinstance(out_name, str):
+        return
+    scaled = value * float(scaling[0])
+    cap = eff.get("max")
+    if cap is not None:
+        scaled = min(scaled, float(cap))
+
+    if out_name.startswith("damMult.") or out_name.startswith("defMult.") \
+            or out_name.startswith("healMult."):
+        applied.damage_mults[out_name] = applied.damage_mults.get(out_name, 0.0) + scaled
+        return
+    v3 = _short_to_v3(out_name)
+    if v3 is not None:
+        applied.stat_bonuses[v3] = applied.stat_bonuses.get(v3, 0.0) + scaled
+    else:
+        applied.raw_short_bonuses[out_name] = applied.raw_short_bonuses.get(out_name, 0.0) + scaled
+
+
 def apply_atree(
     cls: str, selected_node_names: list[str], base_spells: dict[int, Spell],
+    active_toggles: list[str] | None = None,
+    sliders: dict[str, float] | None = None,
 ) -> AtreeApplied:
-    """Apply the selected ability-tree nodes for a class."""
+    """Apply the selected ability-tree nodes for a class.
+
+    `active_toggles` lists `toggle` names to enable on raw_stat effects
+    (e.g. ["Initiator", "Divine Intervention Arrow Storm"]).
+    `sliders` is {slider_name -> value} for stat_scaling effects.
+    """
     atree = load_atree()
     if cls not in atree:
         raise ValueError(f"unknown class: {cls}")
@@ -298,11 +359,17 @@ def apply_atree(
             f"Available: {sorted(nodes_dict.keys())[:30]}..."
         )
 
+    toggles = set(active_toggles or [])
+    sliders = sliders or {}
+
     applied = AtreeApplied()
     for node in selected:
         for eff in node.effects:
-            if eff.get("type") == "raw_stat":
-                _accumulate_raw_stat(applied, eff)
+            t = eff.get("type")
+            if t == "raw_stat":
+                _accumulate_raw_stat(applied, eff, toggles)
+            elif t == "stat_scaling":
+                _accumulate_stat_scaling(applied, eff, sliders)
 
     _apply_spell_effects(applied, base_spells, selected)
     return applied
