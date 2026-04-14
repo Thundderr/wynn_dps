@@ -7,6 +7,7 @@ import sys
 from .api import fetch_ingredients, fetch_items
 from .atree import apply_atree, list_class_nodes, load_atree
 from .constants import CLASS_TO_WEAPON, WEAPON_TO_CLASS
+from .constraints import BuildConstraints
 from .craft_optimizer import optimize_craft
 from .cycle import melee_hits_per_second, optimal_cycle, simulate_rotation
 from .dps import (
@@ -56,11 +57,23 @@ def _run_build(args: argparse.Namespace) -> int:
           f"{weapon.powder_slots} powder slots) for {args.wclass} "
           f"(level {args.level})...", flush=True)
 
+    # Build constraints from CLI flags.
+    c_kwargs = {}
+    for f in ("min_mana_regen", "min_mana_steal", "min_walk_speed",
+              "min_life_steal", "min_hp", "min_ehp", "min_poison"):
+        v = getattr(args, f, None)
+        if v is not None:
+            c_kwargs[f] = v
+    constraints = BuildConstraints(**c_kwargs) if c_kwargs else None
+    if constraints:
+        print(f"Constraints active: {c_kwargs}", flush=True)
+
     results = optimize(
         items, wclass=args.wclass, level=args.level,
         top_k=args.top_k, max_pool_per_slot=args.pool,
         pareto=not args.no_pareto, verbose=True,
         weapon=weapon, use_tomes=not args.no_tomes,
+        constraints=constraints,
     )
     if not results:
         print("No feasible builds found.", file=sys.stderr)
@@ -261,7 +274,21 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--sliders", default="",
                    help="Comma-separated slider_name=value pairs "
                         "(e.g. 'Hits dealt=60,Focus=3').")
+    # War constraint flags (all optional).
+    b.add_argument("--min-mana-regen", type=float, default=None)
+    b.add_argument("--min-mana-steal", type=float, default=None)
+    b.add_argument("--min-walk-speed", type=float, default=None)
+    b.add_argument("--min-life-steal", type=float, default=None)
+    b.add_argument("--min-hp", type=float, default=None)
+    b.add_argument("--min-ehp", type=float, default=None)
+    b.add_argument("--min-poison", type=float, default=None)
     b.add_argument("--refresh", action="store_true")
+
+    w = sub.add_parser("web", help="Launch the FastAPI web UI.")
+    w.add_argument("--host", default="127.0.0.1")
+    w.add_argument("--port", type=int, default=8080)
+    w.add_argument("--reload", action="store_true",
+                   help="Auto-reload on code changes (dev mode).")
 
     a = sub.add_parser("atree", help="List ability-tree nodes for a class.")
     a.add_argument("--class", dest="wclass", required=True,
@@ -292,8 +319,27 @@ def main(argv: list[str] | None = None) -> int:
         return _run_craft(args)
     if args.cmd == "atree":
         return _run_atree_list(args)
+    if args.cmd == "web":
+        return _run_web(args)
     p.print_help()
     return 1
+
+
+def _run_web(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn  # type: ignore
+    except ImportError:
+        print("ERROR: web extras not installed. Run:", file=sys.stderr)
+        print("  pip install -e '.[web]'", file=sys.stderr)
+        return 1
+    print(f"Starting wynn_dps web UI on http://{args.host}:{args.port}",
+          flush=True)
+    uvicorn.run(
+        "wynn_dps.web.app:app",
+        host=args.host, port=args.port,
+        reload=args.reload, log_level="info",
+    )
+    return 0
 
 
 def _run_atree_list(args: argparse.Namespace) -> int:

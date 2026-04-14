@@ -4,9 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wynn_dps"
-version = "0.2.0"
+version = "0.3.0"
 requires-python = ">=3.10"
 dependencies = ["requests>=2.31"]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pydantic>=2.5"]
+gpu = ["torch>=2.1", "numpy>=1.24"]
 
 [project.scripts]
 wynn-dps = "wynn_dps.cli:main"

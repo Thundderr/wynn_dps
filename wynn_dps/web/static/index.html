@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wynn_dps — war build optimizer</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+</head>
+<body x-data="app()" x-init="init()">
+
+<header>
+  <h1>wynn_dps</h1>
+  <span class="badge" x-text="`backend: ${backend}`"></span>
+</header>
+
+<main class="grid">
+
+<section class="card">
+  <h2>1. Class &amp; weapon</h2>
+  <label>Class
+    <select x-model="cls" @change="loadMythics(); loadAtree()">
+      <template x-for="c in classes"><option :value="c" x-text="c"></option></template>
+    </select>
+  </label>
+  <label>Mythic weapon
+    <select x-model="weapon">
+      <option value="">— pick —</option>
+      <template x-for="w in mythics" :key="w.name">
+        <option :value="w.name" x-text="`${w.name} (${w.attack_speed}, ${w.powder_slots} pwd)`"></option>
+      </template>
+    </select>
+  </label>
+  <label>Level
+    <input type="number" min="1" max="106" x-model.number="level">
+  </label>
+</section>
+
+<section class="card">
+  <h2>2. Constraints (war minimums)</h2>
+  <div class="constraints">
+    <label>Mana regen ≥ <input type="number" x-model.number="constraints.min_mana_regen" placeholder="–"></label>
+    <label>Mana steal ≥ <input type="number" x-model.number="constraints.min_mana_steal" placeholder="–"></label>
+    <label>Walk speed ≥ <input type="number" x-model.number="constraints.min_walk_speed" placeholder="–"></label>
+    <label>Life steal ≥ <input type="number" x-model.number="constraints.min_life_steal" placeholder="–"></label>
+    <label>HP ≥ <input type="number" x-model.number="constraints.min_hp" placeholder="–"></label>
+    <label>EHP ≥ <input type="number" x-model.number="constraints.min_ehp" placeholder="–"></label>
+    <label>Health regen raw ≥ <input type="number" x-model.number="constraints.min_health_regen_raw" placeholder="–"></label>
+    <label>Poison ≥ <input type="number" x-model.number="constraints.min_poison" placeholder="–"></label>
+  </div>
+</section>
+
+<section class="card">
+  <h2>3. Optional: lock specific gear</h2>
+  <p class="muted">Empty = optimizer chooses. Filled = optimizer respects.</p>
+  <template x-for="slot in slotNames" :key="slot">
+    <label>
+      <span x-text="slot"></span>:
+      <input type="text" x-model="lockedItems[slot]" placeholder="Item name (optional)">
+    </label>
+  </template>
+</section>
+
+<section class="card">
+  <h2>4. Ability tree</h2>
+  <input type="text" x-model="atreeFilter" placeholder="filter nodes…" class="atree-filter">
+  <div class="atree-grid">
+    <template x-for="n in filteredAtreeNodes" :key="n.name">
+      <label class="atree-node" :class="{ 'archetype-Boltslinger': n.archetype === 'Boltslinger',
+                                          'archetype-Sharpshooter': n.archetype === 'Sharpshooter',
+                                          'archetype-Trapper': n.archetype === 'Trapper',
+                                          'archetype-Fallen': n.archetype === 'Fallen',
+                                          'archetype-Battle Monk': n.archetype === 'Battle Monk',
+                                          'archetype-Paladin': n.archetype === 'Paladin' }">
+        <input type="checkbox" :value="n.name" x-model="selectedAtree">
+        <span x-text="n.name"></span>
+        <small x-text="n.archetype || ''"></small>
+      </label>
+    </template>
+  </div>
+</section>
+
+<section class="card">
+  <h2>5. Run</h2>
+  <label><input type="checkbox" x-model="allowCrafted"> Allow crafted items in Stage B</label>
+  <label>Craft budget (s) <input type="number" min="5" max="120" x-model.number="craftBudget"></label>
+  <label>Top K <input type="number" min="1" max="20" x-model.number="topK"></label>
+  <button @click="optimize()" :disabled="busy || !weapon">
+    <span x-show="!busy">Optimize</span>
+    <span x-show="busy">Running…</span>
+  </button>
+  <div class="error" x-show="error" x-text="error"></div>
+</section>
+
+<section class="card share">
+  <h2>Share / Import</h2>
+  <input type="text" x-model="shareUrl" placeholder="paste wynnbuilder URL or hash…" class="share-input">
+  <button @click="importUrl()">Import</button>
+  <button @click="copyWbUrl()" :disabled="!weapon">Copy wynnbuilder URL</button>
+</section>
+
+</main>
+
+<section class="results" x-show="results.length">
+  <h2>Top builds</h2>
+  <template x-for="(r, idx) in results" :key="idx">
+    <div class="result">
+      <h3>#<span x-text="idx+1"></span> · <span x-text="Math.round(r.dps).toLocaleString()"></span> DPS</h3>
+      <div class="grid two">
+        <div>
+          <strong>Items</strong>
+          <ul>
+            <li><b>weapon:</b> <span x-text="r.build.weapon.name"></span> <span class="muted" x-text="r.build.weapon.attack_speed"></span></li>
+            <template x-for="a in r.build.armor"><li><span x-text="`${a.sub_type}: ${a.name}`"></span></li></template>
+            <template x-for="a in r.build.accessories"><li><span x-text="`${a.sub_type}: ${a.name}`"></span></li></template>
+          </ul>
+          <strong>Powders:</strong> <span x-text="(r.build.powders || []).map(p=>`${p[0][0].toUpperCase()}${p[1]}`).join(' ')"></span>
+          <div x-show="r.tomes && r.tomes.length"><strong>Tomes:</strong> <span x-text="r.tomes.join(', ')"></span></div>
+          <div><strong>Skill points:</strong> <span x-text="JSON.stringify(r.build.skillpoints)"></span></div>
+        </div>
+        <div>
+          <strong>Summary</strong>
+          <table class="stats">
+            <tr><td>HP</td><td x-text="Math.round(r.build.summary.hp).toLocaleString()"></td></tr>
+            <tr><td>EHP</td><td x-text="Math.round(r.build.summary.ehp).toLocaleString()"></td></tr>
+            <tr><td>Mana regen</td><td x-text="r.build.summary.mana_regen"></td></tr>
+            <tr><td>Mana steal</td><td x-text="r.build.summary.mana_steal"></td></tr>
+            <tr><td>Life steal</td><td x-text="r.build.summary.life_steal"></td></tr>
+            <tr><td>Walk speed</td><td x-text="r.build.summary.walk_speed + '%'"></td></tr>
+            <tr><td>Poison</td><td x-text="r.build.summary.poison"></td></tr>
+          </table>
+          <strong>Cycle:</strong>
+          <div x-show="r.build.cycle">
+            <span x-text="(r.build.cycle?.rotation || []).join(' → ')"></span>
+            <div>DPS: <span x-text="Math.round(r.build.cycle?.dps || 0).toLocaleString()"></span>
+              · sustained: <span x-text="r.build.cycle?.sustainable ? '✓' : '✗'"></span></div>
+          </div>
+          <strong>Spells</strong>
+          <table class="stats">
+            <template x-for="s in (r.build.spells || [])">
+              <tr>
+                <td x-text="`[${s.slot}] ${s.name}`"></td>
+                <td x-text="s.cost ? s.cost.toFixed(1) + ' mp' : ''"></td>
+                <td x-text="Math.round(s.display_value).toLocaleString()"></td>
+              </tr>
+            </template>
+          </table>
+        </div>
+      </div>
+    </div>
+  </template>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

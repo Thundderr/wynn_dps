@@ -15,9 +15,13 @@ from .constants import (
     ARMOR_TYPES, ATTACK_SPEED_MULT, ATTACK_SPEEDS, CLASS_TO_WEAPON,
     SKP_ELEMENTS, SKP_ORDER, level_to_skill_points,
 )
+from .constraints import (
+    BuildConstraints, meets_constraints, slot_max_summary, upper_bound_meets,
+)
 from .dps import Build, compute_melee_dps, requirements_met
 from .models import Item
 from .pareto import pareto_filter
+from .powders_smart import pick_powders as smart_pick_powders
 from .skillpoints import (
     SPAssignment, enumerate_assignments, items_sp_gains,
     minimum_required_assignment,
@@ -211,20 +215,24 @@ def _sp_feasible(
     return total_assigned <= sp_budget
 
 
-def _optimize_powders(build: Build) -> list[tuple[str, int]]:
-    if build.weapon.powder_slots <= 0:
-        return []
+def _optimize_powders(build: Build, constraints: BuildConstraints | None = None) -> list[tuple[str, int]]:
+    """Element-aligned powder picker (smart). Falls back to brute 5-element if
+    smart returns empty (e.g., constraint-incompatible)."""
+    powders = smart_pick_powders(build.weapon, build, constraints)
+    if powders or build.weapon.powder_slots <= 0:
+        return powders
+    # Fallback: try every element if smart returned nothing
     best: list[tuple[str, int]] = []
     best_dps = -1.0
     for e in SKP_ELEMENTS:
-        powders = [(e, 6)] * build.weapon.powder_slots
+        ps = [(e, 6)] * build.weapon.powder_slots
         trial = Build(weapon=build.weapon, armor=build.armor,
-                      accessories=build.accessories, powders=powders,
+                      accessories=build.accessories, powders=ps,
                       skillpoints=build.skillpoints)
         dps = compute_melee_dps(trial)
         if dps > best_dps:
             best_dps = dps
-            best = powders
+            best = ps
     return best
 
 
@@ -238,6 +246,7 @@ class Result:
 def _eval_full_build(
     weapon: Item, chosen: dict[str, Item], level: int,
     use_tomes: bool = True,
+    constraints: BuildConstraints | None = None,
 ) -> tuple[float, Build, list[GuildTome]] | None:
     armor_slots = [chosen[s] for s in ("helmet", "chestplate", "leggings", "boots") if s in chosen]
     acc_slots = [chosen[s] for s in ("ring1", "ring2", "bracelet", "necklace") if s in chosen]
@@ -302,8 +311,11 @@ def _eval_full_build(
     for sp in feasible:
         build = Build(weapon=weapon, armor=armor_slots, accessories=acc_slots,
                       powders=[], skillpoints=sp.assigned)
-        build.powders = _optimize_powders(build)
+        build.powders = _optimize_powders(build, constraints)
         if not requirements_met(build):
+            continue
+        # Hard-constraint filter (post-eval).
+        if constraints is not None and not meets_constraints(build, constraints):
             continue
         dps = compute_melee_dps(build)
         if dps > best_dps:
@@ -333,6 +345,8 @@ def optimize(
     verbose: bool = True,
     weapon: Item | None = None,
     use_tomes: bool = True,
+    constraints: BuildConstraints | None = None,
+    locked_items: dict[str, Item] | None = None,
 ) -> list[Result]:
     pools = _build_pools(items, wclass, level, pareto=pareto)
 
@@ -341,6 +355,12 @@ def optimize(
         pools["weapon"] = [weapon]
     if not pools["weapon"]:
         return []
+
+    # Lock specific gear slots to a single item.
+    if locked_items:
+        for slot, it in locked_items.items():
+            if slot in pools and it is not None:
+                pools[slot] = [it]
 
     def _heur(it: Item) -> float:
         v = _dmg_vector(it)
@@ -352,6 +372,8 @@ def optimize(
 
     slot_max = _slot_maxima(pools)
     slot_min_req = _slot_min_skill_req(pools)
+    # Pre-compute per-slot constraint maxima for upper-bound pruning.
+    slot_constraint_caps = slot_max_summary(pools, pools["weapon"][0]) if constraints else {}
 
     # Slot ordering: biggest contribution first.
     gear_slots = ["chestplate", "leggings", "helmet", "boots",
@@ -402,7 +424,9 @@ def optimize(
 
             if depth == len(gear_slots):
                 stats["evaluated"] += 1
-                out = _eval_full_build(weapon, chosen, level, use_tomes=use_tomes)
+                out = _eval_full_build(weapon, chosen, level,
+                                        use_tomes=use_tomes,
+                                        constraints=constraints)
                 if out is None:
                     stats["infeasible"] += 1
                     return
@@ -423,6 +447,14 @@ def optimize(
 
             slot = gear_slots[depth]
             remaining = gear_slots[depth + 1:]
+
+            # Constraint upper-bound prune.
+            if constraints is not None and not upper_bound_meets(
+                    weapon, chosen_list, remaining, slot_constraint_caps,
+                    constraints):
+                stats.setdefault("pruned_constraint", 0)
+                stats["pruned_constraint"] += 1
+                return
 
             # SP-feasibility prune (optimistic).
             if not _sp_feasible(weapon, chosen_list, remaining,
