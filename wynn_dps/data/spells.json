@@ -1,0 +1,768 @@
+{
+  "archer": {
+    "3": {
+      "name": "Arrow Bomb",
+      "slot": 3,
+      "cost": 45,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "Arrow Bomb",
+          "type": "damage",
+          "multipliers": [
+            140,
+            0,
+            0,
+            0,
+            20,
+            0
+          ]
+        },
+        {
+          "name": "Self Damage",
+          "type": "damage",
+          "use_str": false,
+          "multipliers": [
+            10,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Arrow Bomb": 1
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "aoe": 4.5,
+        "range": 26
+      },
+      "source_node": "Arrow Bomb"
+    },
+    "2": {
+      "name": "Escape",
+      "slot": 2,
+      "cost": 20,
+      "display": "",
+      "parts": [],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "aoe": 0,
+        "range": 0
+      },
+      "source_node": "Escape"
+    },
+    "1": {
+      "name": "Phantom Ray",
+      "slot": 1,
+      "cost": null,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "Single Tick",
+          "type": "damage",
+          "multipliers": [
+            25,
+            0,
+            0,
+            5,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "DPS",
+          "type": "total",
+          "hits": {
+            "Single Tick": 10
+          }
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "DPS": "Arrow Storm.ray_duration"
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "range": 16,
+        "ray_duration": 1.2
+      },
+      "source_node": "Phantom Ray"
+    },
+    "4": {
+      "name": "Guardian Angels",
+      "slot": 4,
+      "cost": null,
+      "display": "DPS",
+      "parts": [
+        {
+          "name": "Single Shot",
+          "type": "damage",
+          "multipliers": [
+            30,
+            0,
+            0,
+            0,
+            0,
+            10
+          ]
+        },
+        {
+          "name": "Single Bow",
+          "type": "total",
+          "hits": {
+            "Single Shot": "Arrow Shield.shots"
+          },
+          "display": false
+        },
+        {
+          "name": "Single Volley",
+          "type": "total",
+          "hits": {
+            "Single Shot": "Arrow Shield.charges"
+          },
+          "display": false
+        },
+        {
+          "name": "DPS",
+          "type": "total",
+          "hits": {
+            "Single Volley": "Arrow Shield.attack_frequency"
+          }
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Single Bow": "Arrow Shield.charges"
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "range": 6,
+        "duration": 60,
+        "shots": 10,
+        "attack_frequency": 2.22222222222
+      },
+      "source_node": "Guardian Angels"
+    },
+    "0": {
+      "name": "Bow Shot",
+      "slot": 0,
+      "cost": 0,
+      "display": "Total Damage",
+      "use_atkspd": true,
+      "scaling": "melee",
+      "properties": {},
+      "parts": [
+        {
+          "name": "Single Shot",
+          "multipliers": [
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Single Shot": 1
+          }
+        }
+      ]
+    }
+  },
+  "warrior": {
+    "1": {
+      "name": "Bash",
+      "slot": 1,
+      "cost": 40,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "Single Hit",
+          "type": "damage",
+          "multipliers": [
+            170,
+            30,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Bash Hit",
+          "type": "total",
+          "hits": {
+            "Single Hit": 1
+          }
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Bash Hit": "Bash.hits"
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "aoe": 4,
+        "range": 3,
+        "hits": 1
+      },
+      "source_node": "Bash"
+    },
+    "2": {
+      "name": "Charge",
+      "slot": 2,
+      "cost": 25,
+      "display": "",
+      "parts": [],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {},
+      "source_node": "Charge"
+    },
+    "3": {
+      "name": "Uppercut",
+      "slot": 3,
+      "cost": 40,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "Uppercut",
+          "multipliers": [
+            260,
+            40,
+            40,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "hits": {
+            "Uppercut": 1,
+            "Smite Damage": 1
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": "spell",
+      "properties": {
+        "aoe": 3,
+        "range": 5.5
+      },
+      "source_node": "Uppercut"
+    },
+    "4": {
+      "name": "War Scream",
+      "slot": 4,
+      "cost": 30,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "War Scream",
+          "multipliers": [
+            75,
+            0,
+            0,
+            0,
+            25,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "hits": {
+            "War Scream": 1
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "duration": 30,
+        "aoe": 12,
+        "defense_bonus": 20
+      },
+      "source_node": "War Scream"
+    },
+    "0": {
+      "name": "Spear Melee",
+      "slot": 0,
+      "cost": 0,
+      "display": "Total Damage",
+      "use_atkspd": true,
+      "scaling": "melee",
+      "properties": {},
+      "parts": [
+        {
+          "name": "Single Shot",
+          "multipliers": [
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Single Shot": 1
+          }
+        }
+      ]
+    }
+  },
+  "mage": {
+    "3": {
+      "name": "Ophanim",
+      "slot": 3,
+      "cost": null,
+      "display": "Per Melee (max)",
+      "parts": [
+        {
+          "name": "Per Orb",
+          "multipliers": [
+            90,
+            0,
+            15,
+            15,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Per Melee (max)",
+          "hits": {
+            "Per Orb": "Ophanim.num_orbs",
+            "Winded Damage": "Ophanim.num_orbs"
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "health": 200,
+        "num_orbs": 2
+      },
+      "source_node": "Ophanim"
+    },
+    "2": {
+      "name": "Teleport",
+      "slot": 2,
+      "cost": 25,
+      "display": "",
+      "parts": [
+        {
+          "name": "Single Teleport",
+          "type": "total",
+          "hits": {},
+          "display": false
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Single Teleport": 1
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "range": 16
+      },
+      "source_node": "Teleport"
+    },
+    "1": {
+      "name": "Arcane Transfer",
+      "slot": 1,
+      "cost": null,
+      "display": "",
+      "parts": [],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "bank": 90
+      },
+      "source_node": "Arcane Transfer"
+    },
+    "4": {
+      "name": "Ice Snake",
+      "slot": 4,
+      "cost": 30,
+      "display": "Ice Snake Damage",
+      "parts": [
+        {
+          "name": "Ice Snake Damage",
+          "multipliers": [
+            120,
+            0,
+            0,
+            55,
+            0,
+            0
+          ]
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "range": 18,
+        "effects": 40,
+        "duration": 3,
+        "aoe": 2
+      },
+      "source_node": "Ice Snake"
+    },
+    "0": {
+      "name": "Wand Melee",
+      "slot": 0,
+      "cost": 0,
+      "display": "Total Damage",
+      "use_atkspd": true,
+      "scaling": "melee",
+      "properties": {},
+      "parts": [
+        {
+          "name": "Single Shot",
+          "multipliers": [
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Single Shot": 1
+          }
+        }
+      ]
+    }
+  },
+  "assassin": {
+    "1": {
+      "name": "Lacerate",
+      "slot": 1,
+      "cost": null,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "Per Hit",
+          "type": "damage",
+          "multipliers": [
+            60,
+            0,
+            0,
+            10,
+            0,
+            20
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Per Hit": 3
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {},
+      "source_node": "Lacerate"
+    },
+    "2": {
+      "name": "Dash",
+      "slot": 2,
+      "cost": 20,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "None",
+          "type": "damage",
+          "multipliers": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {},
+      "source_node": "Dash"
+    },
+    "4": {
+      "name": "Smoke Bomb",
+      "slot": 4,
+      "cost": 35,
+      "display": "Total Damage",
+      "parts": [
+        {
+          "name": "Per Tick",
+          "type": "damage",
+          "multipliers": [
+            25,
+            5,
+            0,
+            0,
+            0,
+            5
+          ]
+        },
+        {
+          "name": "Per Bomb",
+          "type": "total",
+          "hits": {
+            "Per Tick": 10
+          }
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Per Bomb": 1
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {},
+      "source_node": "Smoke Bomb"
+    },
+    "3": {
+      "name": "Backstab",
+      "slot": 3,
+      "cost": null,
+      "display": "Backstab Damage",
+      "parts": [
+        {
+          "name": "Backstab Damage",
+          "type": "damage",
+          "multipliers": [
+            250,
+            50,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {},
+      "source_node": "Backstab"
+    },
+    "0": {
+      "name": "Dagger Melee",
+      "slot": 0,
+      "cost": 0,
+      "display": "Total Damage",
+      "use_atkspd": true,
+      "scaling": "melee",
+      "properties": {},
+      "parts": [
+        {
+          "name": "Single Shot",
+          "multipliers": [
+            100,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Single Shot": 1
+          }
+        }
+      ]
+    }
+  },
+  "shaman": {
+    "1": {
+      "name": "Totem",
+      "slot": 1,
+      "cost": 30,
+      "display": "Tick DPS",
+      "parts": [
+        {
+          "name": "Tick Damage",
+          "multipliers": [
+            6,
+            0,
+            0,
+            0,
+            0,
+            6
+          ]
+        },
+        {
+          "name": "Tick DPS (Per Totem)",
+          "hits": {
+            "Tick Damage": "Totem.totem_mul"
+          }
+        },
+        {
+          "name": "Heal Rate (Per Totem)",
+          "hits": {
+            "Heal Tick": "Totem.totem_mul"
+          }
+        },
+        {
+          "name": "Tick DPS",
+          "hits": {
+            "Tick DPS (Per Totem)": "Totem.num_totems"
+          }
+        },
+        {
+          "name": "Heal Rate",
+          "hits": {
+            "Heal Rate (Per Totem)": "Totem.num_totems"
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "duration": 30,
+        "rate": 0.4,
+        "aoe": 8,
+        "totem_mul": 2.5,
+        "num_totems": 1
+      },
+      "source_node": "Totem"
+    },
+    "2": {
+      "name": "Haul",
+      "slot": 2,
+      "cost": 15,
+      "display": "",
+      "parts": [],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {},
+      "source_node": "Haul"
+    },
+    "4": {
+      "name": "Switch Masks",
+      "slot": 4,
+      "cost": null,
+      "display": "",
+      "parts": [],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {},
+      "source_node": "Awakened"
+    },
+    "3": {
+      "name": "Aura",
+      "slot": 3,
+      "cost": 40,
+      "display": "First Wave",
+      "parts": [
+        {
+          "name": "Single Wave",
+          "multipliers": [
+            150,
+            0,
+            0,
+            30,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "First Wave",
+          "hits": {
+            "Single Wave": "Aura.num_totems"
+          }
+        },
+        {
+          "name": "First Wave Heal",
+          "hits": {
+            "Heal Amount": "Aura.num_totems"
+          }
+        }
+      ],
+      "use_atkspd": null,
+      "scaling": null,
+      "properties": {
+        "range": 16,
+        "num_totems": 1
+      },
+      "source_node": "Aura"
+    },
+    "0": {
+      "name": "Relik Melee",
+      "slot": 0,
+      "cost": 0,
+      "display": "Total Damage",
+      "use_atkspd": true,
+      "scaling": "melee",
+      "properties": {},
+      "parts": [
+        {
+          "name": "Single Beam",
+          "multipliers": [
+            33,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "Total Damage",
+          "type": "total",
+          "hits": {
+            "Single Beam": 3
+          }
+        }
+      ]
+    }
+  }
+}

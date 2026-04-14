@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Launcher: run the Wynncraft DPS optimizer from anywhere.
+# Auto-creates a project venv on first use.
+set -e
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$HERE/.venv/bin/python"
+
+if [ ! -x "$PY" ]; then
+  echo "[wynn-dps] First-time setup: creating venv at $HERE/.venv ..." >&2
+  python3 -m venv "$HERE/.venv"
+  "$PY" -m pip install -q --upgrade pip
+  "$PY" -m pip install -q -e "$HERE"
+fi
+
+exec "$PY" -m wynn_dps.cli "$@"

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wynn_dps"
+version = "0.2.0"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31"]
+
+[project.scripts]
+wynn-dps = "wynn_dps.cli:main"
+
+[tool.setuptools]
+packages = ["wynn_dps", "wynn_dps.data"]
+
+[tool.setuptools.package-data]
+"wynn_dps.data" = ["*.json"]

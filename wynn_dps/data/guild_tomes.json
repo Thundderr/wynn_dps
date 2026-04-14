@@ -1,0 +1,128 @@
+[
+  {
+    "name": "Alchemist's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "int": 2,
+      "def": 2
+    }
+  },
+  {
+    "name": "Arsonist's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "def": 4
+    }
+  },
+  {
+    "name": "Assimilator's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "str": 1,
+      "dex": 1,
+      "int": 1,
+      "def": 1,
+      "agi": 1
+    }
+  },
+  {
+    "name": "Barbarian's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "str": 2,
+      "agi": 2
+    }
+  },
+  {
+    "name": "Brute's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "str": 4
+    }
+  },
+  {
+    "name": "Destroyer's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "str": 2,
+      "def": 2
+    }
+  },
+  {
+    "name": "Devil's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "dex": 2,
+      "def": 2
+    }
+  },
+  {
+    "name": "Fanatic's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "def": 2,
+      "agi": 2
+    }
+  },
+  {
+    "name": "Freelancer's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "dex": 2,
+      "agi": 2
+    }
+  },
+  {
+    "name": "Ghost's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "agi": 4
+    }
+  },
+  {
+    "name": "Loner's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "str": 2,
+      "int": 2
+    }
+  },
+  {
+    "name": "Mastermind's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "int": 4
+    }
+  },
+  {
+    "name": "Psychopath's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "str": 2,
+      "dex": 2
+    }
+  },
+  {
+    "name": "Sadist's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "dex": 4
+    }
+  },
+  {
+    "name": "Sycophant's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "int": 2,
+      "agi": 2
+    }
+  },
+  {
+    "name": "Warlock's Tome of Allegiance",
+    "level": 100,
+    "sp_grants": {
+      "dex": 2,
+      "int": 2
+    }
+  }
+]
