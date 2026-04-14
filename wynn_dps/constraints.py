@@ -55,13 +55,12 @@ def evaluate_build_summary(build: "Build") -> dict[str, float]:
     ids = _build_ids(build)
     eff = _effective_skillpoints(build)
 
-    # HP: sum of base health from items + raw bonuses (we currently don't
-    # parse base HP from items, so this is an approximation using rawHealth
-    # and hpBonus; full HP is class+level base + items).
+    # HP: class-level base + rawHealth + hpBonus + sum of armor baseHealth.
     raw_hp = ids.get("rawHealth", 0) + ids.get("hpBonus", 0)
-    # Approximate base HP: 5*level + 5 (Wynncraft formula).
-    base_hp = 5 * build.weapon.level + 5  # rough; level=weapon.level for now
-    hp = max(1.0, base_hp + raw_hp)
+    item_base_hp = sum(getattr(it, "base_health", 0) for it in build.armor)
+    char_level = getattr(build, "level", 106) or 106
+    base_hp = 5 * char_level + 5
+    hp = max(1.0, base_hp + raw_hp + item_base_hp)
 
     # EHP = HP × (1 + average_defense_pct). Use simplified average across the
     # 5 elements; tank builds care about per-element so callers can also use

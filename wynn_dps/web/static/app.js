@@ -24,9 +24,11 @@ function app() {
     allowCrafted: true,
     craftBudget: 30,
     topK: 3,
+    pool: 15,
     busy: false,
     error: "",
     results: [],
+    logLines: [],
     shareUrl: "",
 
     async init() {
@@ -52,6 +54,48 @@ function app() {
       return this.atreeNodes.filter(n => n.name.toLowerCase().includes(f));
     },
 
+    /** Group atree nodes into rows by BFS depth from the root. */
+    get atreeRows() {
+      const byName = Object.fromEntries(this.atreeNodes.map(n => [n.name, n]));
+      const depth = {};   // name -> int
+      const queue = [];
+      // Roots = nodes with no parents
+      for (const n of this.atreeNodes) {
+        if (!n.parents || n.parents.length === 0) {
+          depth[n.name] = 0;
+          queue.push(n.name);
+        }
+      }
+      // BFS: each child = 1 + min(parent depths)
+      let guard = 0;
+      while (queue.length && guard < 10000) {
+        const name = queue.shift(); guard++;
+        for (const m of this.atreeNodes) {
+          if (m.parents && m.parents.includes(name)) {
+            const newDepth = (depth[name] ?? 0) + 1;
+            if (depth[m.name] === undefined || newDepth < depth[m.name]) {
+              depth[m.name] = newDepth;
+              queue.push(m.name);
+            }
+          }
+        }
+      }
+      // Group and sort within depth by archetype then name.
+      const rows = {};
+      for (const n of this.atreeNodes) {
+        const d = depth[n.name] ?? 99;
+        (rows[d] ||= []).push(n);
+      }
+      return Object.keys(rows)
+        .map(Number).sort((a, b) => a - b)
+        .map(d => ({
+          depth: d,
+          nodes: rows[d].sort((a, b) =>
+            (a.archetype || "").localeCompare(b.archetype || "") ||
+            a.name.localeCompare(b.name)),
+        }));
+    },
+
     _cleanConstraints() {
       const out = {};
       for (const [k, v] of Object.entries(this.constraints)) {
@@ -69,7 +113,7 @@ function app() {
     },
 
     async optimize() {
-      this.error = ""; this.results = [];
+      this.error = ""; this.results = []; this.logLines = [];
       if (!this.weapon) { this.error = "pick a weapon first"; return; }
       this.busy = true;
       try {
@@ -80,7 +124,7 @@ function app() {
           constraints: this._cleanConstraints(),
           allow_crafted: this.allowCrafted,
           craft_budget_s: this.craftBudget,
-          top_k: this.topK, pool: 6,
+          top_k: this.topK, pool: this.pool,
         };
         const r = await fetch("/api/optimize", {
           method: "POST", headers: {"Content-Type": "application/json"},
@@ -91,8 +135,12 @@ function app() {
           return;
         }
         const data = await r.json();
+        this.logLines = data.log || [];
+        if (data.error) this.error = data.error;
         this.results = data.results || [];
-        if (!this.results.length) this.error = "no feasible builds";
+        if (!this.results.length && !this.error) {
+          this.error = `no feasible builds (elapsed ${data.elapsed_s?.toFixed(1) ?? "?"}s)`;
+        }
       } catch (e) { this.error = String(e); }
       finally { this.busy = false; }
     },
@@ -101,23 +149,50 @@ function app() {
       let h = this.shareUrl.trim();
       if (h.includes("#")) h = h.split("#")[1];
       if (!h) return;
+      this.error = "";
       try {
-        const r = await fetch("/api/decode-url", {
+        // First pass: decode with arbitrary class to read equipment/weapon.
+        // We'll re-decode once we know the real class (atree is class-specific).
+        let r = await fetch("/api/decode-url", {
           method: "POST", headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({hash: h, cls: this.cls}),
+          body: JSON.stringify({hash: h, cls: "archer"}),
         });
         if (!r.ok) { this.error = `decode failed: ${await r.text()}`; return; }
-        const d = await r.json();
-        // populate fields
+        let d = await r.json();
+        const weaponName = d.equipment[8];
+        // Look up the weapon item to get its class.
+        if (weaponName && !weaponName.startsWith("CR-")) {
+          const itemRes = await fetch(`/api/items?class=`).then(x => x.json());
+          const match = itemRes.find(x => x.name === weaponName);
+          if (match && match.class_req) {
+            if (match.class_req !== this.cls) {
+              this.cls = match.class_req;
+              await this.loadMythics();
+              await this.loadAtree();
+              // Re-decode with correct class so atree nodes resolve.
+              r = await fetch("/api/decode-url", {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({hash: h, cls: this.cls}),
+              });
+              if (r.ok) d = await r.json();
+            }
+          }
+        }
+
+        // Clear existing locks so we don't accidentally mix state.
+        for (const k of this.slotNames) this.lockedItems[k] = "";
+
         const slots = ["helmet","chestplate","leggings","boots",
                        "ring1","ring2","bracelet","necklace","weapon"];
         for (let i = 0; i < slots.length; i++) {
           const v = d.equipment[i];
-          if (slots[i] === "weapon" && v && !v.startsWith("CR-")) this.weapon = v;
-          else if (v && !v.startsWith("CR-")) this.lockedItems[slots[i]] = v;
+          if (!v || v.startsWith("CR-")) continue;
+          if (slots[i] === "weapon") this.weapon = v;
+          else this.lockedItems[slots[i]] = v;
         }
         this.selectedAtree = d.atree_nodes || [];
         if (d.level) this.level = d.level;
+        this.error = `imported: ${d.equipment.filter(x=>x&&!x.startsWith("CR-")).length} items, ${(d.atree_nodes || []).length} atree nodes`;
       } catch (e) { this.error = String(e); }
     },
 

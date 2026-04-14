@@ -173,16 +173,21 @@ def _upper_bound(
 # Skill-point feasibility pruning
 # ---------------------------------------------------------------------------
 
+_sp_feasible_last_breakdown: dict | None = None
+
+
 def _sp_feasible(
     weapon: Item, selected: list[Item], remaining_slots: list[str],
     slot_max: dict[str, dict[str, float]],
     slot_min_req: dict[str, dict[str, int]],
     sp_budget: int,
+    tome_budget: int = 0,
 ) -> bool:
     """Optimistic feasibility: assume future slots grant their max raw<Stat>
     and require at least slot_min_req[stat]. If even that cannot fit in
-    sp_budget, prune.
+    sp_budget (+ tome rescue headroom), prune.
     """
+    global _sp_feasible_last_breakdown
     # Selected items contribute fixed reqs and gains.
     cur_max_req = {s: 0 for s in SKP_ORDER}
     cur_gains = {s: 0 for s in SKP_ORDER}
@@ -203,16 +208,22 @@ def _sp_feasible(
             future_max_gain[st] += int(slot_max[slot][_raw_skill_key(st)])
 
     total_assigned = 0
+    breakdown: dict[str, dict[str, float]] = {}
     for st in SKP_ORDER:
-        # Need to satisfy max(current_req, future_floor_req).
         req = max(cur_max_req[st], future_floor_req[st])
-        if req <= 0:
-            # No item requires this stat → no SP needed regardless of how
-            # negative the (e.g. mythic-weapon) raw<Stat> contribution is.
-            continue
         gain = cur_gains[st] + future_max_gain[st]
-        total_assigned += max(0, req - gain)
-    return total_assigned <= sp_budget
+        if req <= 0:
+            need = 0
+        else:
+            need = max(0, req - gain)
+        breakdown[st] = {"req": req, "gain": gain, "need": need}
+        total_assigned += need
+    _sp_feasible_last_breakdown = {
+        "breakdown": breakdown, "total": total_assigned,
+        "budget": sp_budget + tome_budget,
+        "n_selected": len(selected), "n_remaining": len(remaining_slots),
+    }
+    return total_assigned <= sp_budget + tome_budget
 
 
 def _optimize_powders(build: Build, constraints: BuildConstraints | None = None) -> list[tuple[str, int]]:
@@ -316,6 +327,13 @@ def _eval_full_build(
             continue
         # Hard-constraint filter (post-eval).
         if constraints is not None and not meets_constraints(build, constraints):
+            from .constraints import evaluate_build_summary as _ebs
+            s = _ebs(build)
+            _eval_full_build._last_fail = {
+                k: s.get(k) for k in ("mana_regen", "mana_steal", "life_steal",
+                                       "walk_speed", "hp", "ehp", "poison",
+                                       "health_regen_raw")
+            }
             continue
         dps = compute_melee_dps(build)
         if dps > best_dps:
@@ -364,7 +382,9 @@ def optimize(
 
     def _heur(it: Item) -> float:
         v = _dmg_vector(it)
-        return v[0] + 10 * v[1] + 3 * (v[2] + v[3]) + 8 * (v[5] + v[6])
+        # Penalize high-SP-req items so the top-N retains SP-cheap options.
+        sp_req = sum(it.skill_reqs.get(s, 0) for s in SKP_ORDER)
+        return v[0] + 10 * v[1] + 3 * (v[2] + v[3]) + 8 * (v[5] + v[6]) - 2 * sp_req
 
     for k in pools:
         pools[k].sort(key=_heur, reverse=True)
@@ -456,10 +476,26 @@ def optimize(
                 stats["pruned_constraint"] += 1
                 return
 
-            # SP-feasibility prune (optimistic).
+            # SP-feasibility prune (optimistic). Tome rescue adds up to
+            # 16 SP of flex when tomes are enabled.
+            tome_budget = 16 if use_tomes else 0
             if not _sp_feasible(weapon, chosen_list, remaining,
-                                 slot_max, slot_min_req, sp_budget):
+                                 slot_max, slot_min_req, sp_budget,
+                                 tome_budget=tome_budget):
                 stats["pruned_sp"] += 1
+                # Dump a sample prune cause the first time.
+                if verbose and stats["pruned_sp"] <= 3:
+                    bd = _sp_feasible_last_breakdown
+                    if bd:
+                        worst = max(bd["breakdown"].items(),
+                                     key=lambda kv: kv[1]["need"])
+                        st, info = worst
+                        print(f"  sp-prune @depth={depth} (sel={bd['n_selected']}, "
+                              f"rem={bd['n_remaining']}): "
+                              f"need total={bd['total']:.0f} > {bd['budget']}; "
+                              f"worst stat={st} req={info['req']:.0f} "
+                              f"gain={info['gain']:.0f} need={info['need']:.0f}",
+                              flush=True)
                 return
 
             # DPS upper-bound prune.
@@ -485,6 +521,36 @@ def optimize(
               f"evaluated, {stats['pruned_sp']:,} sp-prunes, "
               f"{stats['pruned_dps']:,} dps-prunes, "
               f"{stats['infeasible']:,} infeasible.", flush=True)
+        last_fail = getattr(_eval_full_build, "_last_fail", None)
+        if constraints is not None and last_fail:
+            print(f"  last constraint-failing build summary: {last_fail}",
+                  flush=True)
+        # If nothing was evaluated, dump an SP-feasibility breakdown to
+        # help the user diagnose why their locked items are infeasible.
+        if stats["evaluated"] == 0 and pools["weapon"]:
+            w = pools["weapon"][0]
+            print("\n▶ SP-feasibility breakdown (root-level, all-zero gear):",
+                  flush=True)
+            total_need = 0
+            for stat in SKP_ORDER:
+                raw_key = "raw" + stat[0].upper() + stat[1:]
+                req = w.skill_reqs.get(stat, 0)
+                gain = int(w.ids.get(raw_key, 0))
+                floor = max((slot_min_req[s].get(stat, 0) for s in gear_slots), default=0)
+                req_total = max(req, floor)
+                remaining_gain = sum(int(slot_max[s].get(raw_key, 0)) for s in gear_slots)
+                total_gain = gain + remaining_gain
+                # Only stats that some item requires demand SP — negative gains
+                # on unrequired stats don't consume SP.
+                need = max(0, req_total - total_gain) if req_total > 0 else 0
+                total_need += need
+                print(f"    {stat:<13} req(w+floors)={req_total:>4}  "
+                      f"gain(w+slots_max)={total_gain:>4}  need_assigned>={need:>3}",
+                      flush=True)
+            budget = sp_budget + (16 if use_tomes else 0)
+            verdict = "FITS" if total_need <= budget else "OVER"
+            print(f"    total need={total_need} vs budget={budget}  →  {verdict}",
+                  flush=True)
 
     results.sort(key=lambda r: r.dps, reverse=True)
     seen: set[tuple[str, ...]] = set()

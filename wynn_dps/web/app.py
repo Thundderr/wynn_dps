@@ -15,8 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import json
 import os
+import time
+import traceback
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import Any
 
@@ -374,7 +378,9 @@ async def api_optimize(req: OptimizeReq):
     key = hashlib.sha1(key_blob.encode()).hexdigest()
     cache_path = _CACHE_OPTIMIZED / f"{key}.json"
     if cache_path.exists():
-        return json.loads(cache_path.read_text())
+        cached = json.loads(cache_path.read_text())
+        cached.setdefault("log", []).insert(0, f"[cache hit] key={key[:8]}")
+        return cached
 
     items = _items()
     weapon = _item_by_name(req.weapon)
@@ -391,40 +397,96 @@ async def api_optimize(req: OptimizeReq):
     c = BuildConstraints(**req.constraints) if req.constraints else None
 
     def _run() -> dict[str, Any]:
-        if req.allow_crafted:
-            from ..api import fetch_ingredients
-            ingreds_raw = fetch_ingredients()
-            ts = optimize_two_stage(
-                items, ingreds_raw, wclass=req.cls, weapon=weapon,
-                level=req.level, constraints=c, locked_items=locked,
-                top_k=req.top_k, pool=req.pool,
-                craft_budget_s=req.craft_budget_s, verbose=False,
-            )
-            results = ts.final_results
-            stage = "B" if ts.swaps else "A"
-        else:
-            results = optimize(
-                items, wclass=req.cls, weapon=weapon, level=req.level,
-                top_k=req.top_k, max_pool_per_slot=req.pool,
-                use_tomes=True, constraints=c, locked_items=locked,
-                verbose=False,
-            )
-            stage = "A"
+        buf = io.StringIO()
+        t0 = time.monotonic()
+        error: str | None = None
+        results: list = []
+        stage = "A"
+        try:
+            with redirect_stdout(buf):
+                print(f"Optimizing for {req.cls} weapon={req.weapon} "
+                      f"level={req.level} pool={req.pool} top_k={req.top_k}",
+                      flush=True)
+                if c is not None:
+                    # show non-None fields
+                    active = {k: v for k, v in req.constraints.items()
+                              if v not in (None, "", [], {})}
+                    print(f"Constraints active: {active}", flush=True)
+                if locked:
+                    print(f"Locked items: "
+                          f"{ {s: it.name for s, it in locked.items()} }",
+                          flush=True)
+                if req.atree_nodes:
+                    print(f"Atree: {len(req.atree_nodes)} nodes selected",
+                          flush=True)
 
-        # Decorate with atree for spell display.
-        if req.atree_nodes:
-            spells = load_spells().get(req.cls, {})
-            atree = apply_atree(req.cls, req.atree_nodes, spells,
-                                 active_toggles=req.toggles, sliders=req.sliders)
-            for r in results:
-                r.build.atree_bonuses = atree.stat_bonuses
-                r.build.atree_short_bonuses = atree.raw_short_bonuses
-                r.build.atree_spells = atree.spells
-                r.build.atree_spell_cost_delta = atree.spell_cost_delta
-                r.build.atree_damage_mults = atree.damage_mults
+                if req.allow_crafted:
+                    from ..api import fetch_ingredients
+                    print("Stage A: normal-only baseline optimizer...", flush=True)
+                    ingreds_raw = fetch_ingredients()
+                    ts = optimize_two_stage(
+                        items, ingreds_raw, wclass=req.cls, weapon=weapon,
+                        level=req.level, constraints=c, locked_items=locked,
+                        top_k=req.top_k, pool=req.pool,
+                        craft_budget_s=req.craft_budget_s, verbose=True,
+                    )
+                    results = ts.final_results
+                    stage = "B" if ts.swaps else "A"
+                    if ts.swaps:
+                        print(f"\nStage B made {len(ts.swaps)} swap(s):",
+                              flush=True)
+                        for sw in ts.swaps:
+                            print(f"  result #{sw['result_idx']+1} {sw['slot']}"
+                                  f": {sw['old_dps']:,.0f} → {sw['new_dps']:,.0f}",
+                                  flush=True)
+                    else:
+                        print("Stage B found no crafted improvements", flush=True)
+                else:
+                    print("Normal-only optimizer (crafted disabled)...", flush=True)
+                    results = optimize(
+                        items, wclass=req.cls, weapon=weapon, level=req.level,
+                        top_k=req.top_k, max_pool_per_slot=req.pool,
+                        use_tomes=True, constraints=c, locked_items=locked,
+                        verbose=True,
+                    )
 
+                if not results:
+                    print("\n⚠ No feasible builds.  Possible causes:",
+                          flush=True)
+                    if c is not None:
+                        print(f"  - Constraint floors too tight: {req.constraints}",
+                              flush=True)
+                    if locked:
+                        print(f"  - Locked items might be infeasible together",
+                              flush=True)
+                    print(f"  - Weapon {req.weapon!r} class/skill "
+                          f"reqs unreachable with {req.level} SP", flush=True)
+
+                # Decorate with atree for spell display.
+                if req.atree_nodes and results:
+                    spells = load_spells().get(req.cls, {})
+                    atree = apply_atree(req.cls, req.atree_nodes, spells,
+                                         active_toggles=req.toggles,
+                                         sliders=req.sliders)
+                    for r in results:
+                        r.build.atree_bonuses = atree.stat_bonuses
+                        r.build.atree_short_bonuses = atree.raw_short_bonuses
+                        r.build.atree_spells = atree.spells
+                        r.build.atree_spell_cost_delta = atree.spell_cost_delta
+                        r.build.atree_damage_mults = atree.damage_mults
+
+                print(f"\nDone in {time.monotonic()-t0:.1f}s. "
+                      f"Returning {len(results)} build(s).", flush=True)
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+            traceback.print_exc(file=buf)
+
+        log_lines = buf.getvalue().splitlines()
         return {
             "stage": stage,
+            "elapsed_s": time.monotonic() - t0,
+            "log": log_lines,
+            "error": error,
             "results": [
                 {
                     "dps": r.dps,
@@ -436,5 +498,6 @@ async def api_optimize(req: OptimizeReq):
         }
 
     out = await asyncio.to_thread(_run)
-    cache_path.write_text(json.dumps(out))
+    if out.get("results"):
+        cache_path.write_text(json.dumps(out))
     return out

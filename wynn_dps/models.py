@@ -25,6 +25,11 @@ DAMAGE_IDS = {
     "manaRegen", "manaSteal", "poison",
     "1stSpellCost", "2ndSpellCost", "3rdSpellCost", "4thSpellCost",
     "raw1stSpellCost", "raw2ndSpellCost", "raw3rdSpellCost", "raw4thSpellCost",
+    # Survivability / utility (used by BuildConstraints & summary).
+    "lifeSteal", "healthRegen", "healthRegenRaw", "rawHealth", "hpBonus",
+    "walkSpeed", "jumpHeight",
+    "earthDefence", "thunderDefence", "waterDefence", "fireDefence", "airDefence",
+    "reflection", "thorns",
 }
 
 
@@ -67,6 +72,8 @@ class Item:
     powder_slots: int = 0
     # Max-roll values for the identifications we care about.
     ids: dict[str, float] = field(default_factory=dict)
+    # Armor-only: baseHealth (raw flat HP contribution).
+    base_health: int = 0
 
     @property
     def is_weapon(self) -> bool:
@@ -113,6 +120,13 @@ def parse_item(name: str, raw: dict[str, Any]) -> Item | None:
         attack_speed = None
 
     powder_slots = int(raw.get("powderSlots", 0) or 0)
+    base_health = 0
+    if t == "armour":
+        bh = base.get("baseHealth")
+        if isinstance(bh, dict):
+            base_health = int(bh.get("raw", bh.get("max", 0)))
+        elif isinstance(bh, (int, float)):
+            base_health = int(bh)
 
     ids: dict[str, float] = {}
     for k, v in (raw.get("identifications", {}) or {}).items():
@@ -131,6 +145,7 @@ def parse_item(name: str, raw: dict[str, Any]) -> Item | None:
         attack_speed=attack_speed,
         powder_slots=powder_slots,
         ids=ids,
+        base_health=base_health,
     )
 
 

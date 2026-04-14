@@ -10,92 +10,102 @@
 
 <header>
   <h1>wynn_dps</h1>
-  <span class="badge" x-text="`backend: ${backend}`"></span>
+  <div class="header-right">
+    <input type="text" x-model="shareUrl" placeholder="paste wynnbuilder URL…" class="share-input">
+    <button @click="importUrl()">Import</button>
+    <button @click="copyWbUrl()" :disabled="!weapon">Copy URL</button>
+    <span class="badge" x-text="`backend: ${backend}`"></span>
+  </div>
 </header>
 
-<main class="grid">
+<main class="layout">
 
-<section class="card">
-  <h2>1. Class &amp; weapon</h2>
-  <label>Class
+<aside class="controls">
+
+<div class="card compact">
+  <h2>Class / weapon / level</h2>
+  <div class="row">
     <select x-model="cls" @change="loadMythics(); loadAtree()">
       <template x-for="c in classes"><option :value="c" x-text="c"></option></template>
     </select>
-  </label>
-  <label>Mythic weapon
-    <select x-model="weapon">
-      <option value="">— pick —</option>
-      <template x-for="w in mythics" :key="w.name">
-        <option :value="w.name" x-text="`${w.name} (${w.attack_speed}, ${w.powder_slots} pwd)`"></option>
-      </template>
-    </select>
-  </label>
-  <label>Level
-    <input type="number" min="1" max="106" x-model.number="level">
-  </label>
-</section>
-
-<section class="card">
-  <h2>2. Constraints (war minimums)</h2>
-  <div class="constraints">
-    <label>Mana regen ≥ <input type="number" x-model.number="constraints.min_mana_regen" placeholder="–"></label>
-    <label>Mana steal ≥ <input type="number" x-model.number="constraints.min_mana_steal" placeholder="–"></label>
-    <label>Walk speed ≥ <input type="number" x-model.number="constraints.min_walk_speed" placeholder="–"></label>
-    <label>Life steal ≥ <input type="number" x-model.number="constraints.min_life_steal" placeholder="–"></label>
-    <label>HP ≥ <input type="number" x-model.number="constraints.min_hp" placeholder="–"></label>
-    <label>EHP ≥ <input type="number" x-model.number="constraints.min_ehp" placeholder="–"></label>
-    <label>Health regen raw ≥ <input type="number" x-model.number="constraints.min_health_regen_raw" placeholder="–"></label>
-    <label>Poison ≥ <input type="number" x-model.number="constraints.min_poison" placeholder="–"></label>
+    <input type="number" min="1" max="106" x-model.number="level" style="max-width:70px">
   </div>
-</section>
+  <select x-model="weapon">
+    <option value="">— pick mythic weapon —</option>
+    <template x-for="w in mythics" :key="w.name">
+      <option :value="w.name" x-text="`${w.name} — ${w.attack_speed}, ${w.powder_slots}p`"></option>
+    </template>
+  </select>
+</div>
 
-<section class="card">
-  <h2>3. Optional: lock specific gear</h2>
-  <p class="muted">Empty = optimizer chooses. Filled = optimizer respects.</p>
-  <template x-for="slot in slotNames" :key="slot">
-    <label>
-      <span x-text="slot"></span>:
-      <input type="text" x-model="lockedItems[slot]" placeholder="Item name (optional)">
-    </label>
-  </template>
-</section>
+<div class="card compact">
+  <h2>Constraints (min floors)</h2>
+  <div class="cgrid">
+    <label>mana/5s<input type="number" x-model.number="constraints.min_mana_regen" placeholder="–"></label>
+    <label>mana steal<input type="number" x-model.number="constraints.min_mana_steal" placeholder="–"></label>
+    <label>walk %<input type="number" x-model.number="constraints.min_walk_speed" placeholder="–"></label>
+    <label>life steal<input type="number" x-model.number="constraints.min_life_steal" placeholder="–"></label>
+    <label>HP<input type="number" x-model.number="constraints.min_hp" placeholder="–"></label>
+    <label>EHP<input type="number" x-model.number="constraints.min_ehp" placeholder="–"></label>
+    <label>HP regen<input type="number" x-model.number="constraints.min_health_regen_raw" placeholder="–"></label>
+    <label>poison<input type="number" x-model.number="constraints.min_poison" placeholder="–"></label>
+  </div>
+</div>
 
-<section class="card">
-  <h2>4. Ability tree</h2>
-  <input type="text" x-model="atreeFilter" placeholder="filter nodes…" class="atree-filter">
-  <div class="atree-grid">
-    <template x-for="n in filteredAtreeNodes" :key="n.name">
-      <label class="atree-node" :class="{ 'archetype-Boltslinger': n.archetype === 'Boltslinger',
-                                          'archetype-Sharpshooter': n.archetype === 'Sharpshooter',
-                                          'archetype-Trapper': n.archetype === 'Trapper',
-                                          'archetype-Fallen': n.archetype === 'Fallen',
-                                          'archetype-Battle Monk': n.archetype === 'Battle Monk',
-                                          'archetype-Paladin': n.archetype === 'Paladin' }">
-        <input type="checkbox" :value="n.name" x-model="selectedAtree">
-        <span x-text="n.name"></span>
-        <small x-text="n.archetype || ''"></small>
+<div class="card compact">
+  <h2>Locked gear (optional)</h2>
+  <div class="cgrid">
+    <template x-for="slot in slotNames" :key="slot">
+      <label><span x-text="slot"></span>
+        <input type="text" x-model="lockedItems[slot]" placeholder="(any)">
       </label>
     </template>
   </div>
-</section>
+</div>
 
-<section class="card">
-  <h2>5. Run</h2>
-  <label><input type="checkbox" x-model="allowCrafted"> Allow crafted items in Stage B</label>
-  <label>Craft budget (s) <input type="number" min="5" max="120" x-model.number="craftBudget"></label>
-  <label>Top K <input type="number" min="1" max="20" x-model.number="topK"></label>
-  <button @click="optimize()" :disabled="busy || !weapon">
-    <span x-show="!busy">Optimize</span>
-    <span x-show="busy">Running…</span>
-  </button>
+<div class="card compact">
+  <h2>Run</h2>
+  <div class="run-row">
+    <label class="inline"><input type="checkbox" x-model="allowCrafted"> crafted</label>
+    <label class="inline">budget<input type="number" min="5" max="120" x-model.number="craftBudget" style="width:50px"></label>
+    <label class="inline">top-K<input type="number" min="1" max="20" x-model.number="topK" style="width:40px"></label>
+    <label class="inline">pool<input type="number" min="4" max="50" x-model.number="pool" style="width:40px"></label>
+    <button @click="optimize()" :disabled="busy || !weapon" class="primary">
+      <span x-show="!busy">Optimize</span><span x-show="busy">…</span>
+    </button>
+  </div>
   <div class="error" x-show="error" x-text="error"></div>
-</section>
+  <details x-show="logLines.length" class="log-details">
+    <summary><span x-text="`log (${logLines.length} lines)`"></span></summary>
+    <pre class="log"><template x-for="line in logLines"><div x-text="line"></div></template></pre>
+  </details>
+</div>
 
-<section class="card share">
-  <h2>Share / Import</h2>
-  <input type="text" x-model="shareUrl" placeholder="paste wynnbuilder URL or hash…" class="share-input">
-  <button @click="importUrl()">Import</button>
-  <button @click="copyWbUrl()" :disabled="!weapon">Copy wynnbuilder URL</button>
+</aside>
+
+<section class="atree-panel card">
+  <div class="atree-head">
+    <h2>Ability tree</h2>
+    <input type="text" x-model="atreeFilter" placeholder="filter…" class="atree-filter">
+    <span class="muted" x-text="`${selectedAtree.length} / ${atreeNodes.length}`"></span>
+    <button @click="selectedAtree = []" class="small">clear</button>
+  </div>
+  <div class="atree-tree">
+    <template x-for="row in atreeRows" :key="row.depth + ':' + row.nodes.map(n=>n.name).join('|')">
+      <div class="atree-row">
+        <template x-for="n in row.nodes" :key="n.name">
+          <label class="atree-node"
+                 :class="{ 'sel': selectedAtree.includes(n.name),
+                           ['arch-' + (n.archetype || 'none').replace(/\s/g,'')]: true,
+                           'dim': atreeFilter && !n.name.toLowerCase().includes(atreeFilter.toLowerCase()) }"
+                 :title="`${n.name}${n.archetype ? ' · ' + n.archetype : ''} · ${n.cost} AP`">
+            <input type="checkbox" :value="n.name" x-model="selectedAtree">
+            <span x-text="n.name"></span>
+          </label>
+        </template>
+      </div>
+    </template>
+  </div>
 </section>
 
 </main>
@@ -113,37 +123,35 @@
             <template x-for="a in r.build.armor"><li><span x-text="`${a.sub_type}: ${a.name}`"></span></li></template>
             <template x-for="a in r.build.accessories"><li><span x-text="`${a.sub_type}: ${a.name}`"></span></li></template>
           </ul>
-          <strong>Powders:</strong> <span x-text="(r.build.powders || []).map(p=>`${p[0][0].toUpperCase()}${p[1]}`).join(' ')"></span>
+          <div><strong>Powders:</strong> <span x-text="(r.build.powders || []).map(p=>`${p[0][0].toUpperCase()}${p[1]}`).join(' ')"></span></div>
           <div x-show="r.tomes && r.tomes.length"><strong>Tomes:</strong> <span x-text="r.tomes.join(', ')"></span></div>
-          <div><strong>Skill points:</strong> <span x-text="JSON.stringify(r.build.skillpoints)"></span></div>
+          <div><strong>SP:</strong> <span x-text="Object.entries(r.build.skillpoints).filter(([,v])=>v).map(([k,v])=>`${k.slice(0,3)} ${v}`).join(' · ')"></span></div>
         </div>
         <div>
-          <strong>Summary</strong>
           <table class="stats">
-            <tr><td>HP</td><td x-text="Math.round(r.build.summary.hp).toLocaleString()"></td></tr>
-            <tr><td>EHP</td><td x-text="Math.round(r.build.summary.ehp).toLocaleString()"></td></tr>
-            <tr><td>Mana regen</td><td x-text="r.build.summary.mana_regen"></td></tr>
-            <tr><td>Mana steal</td><td x-text="r.build.summary.mana_steal"></td></tr>
-            <tr><td>Life steal</td><td x-text="r.build.summary.life_steal"></td></tr>
-            <tr><td>Walk speed</td><td x-text="r.build.summary.walk_speed + '%'"></td></tr>
-            <tr><td>Poison</td><td x-text="r.build.summary.poison"></td></tr>
+            <tr><td>HP</td><td x-text="Math.round(r.build.summary.hp).toLocaleString()"></td>
+                <td>EHP</td><td x-text="Math.round(r.build.summary.ehp).toLocaleString()"></td></tr>
+            <tr><td>Mana regen</td><td x-text="r.build.summary.mana_regen"></td>
+                <td>Mana steal</td><td x-text="r.build.summary.mana_steal"></td></tr>
+            <tr><td>Life steal</td><td x-text="r.build.summary.life_steal"></td>
+                <td>Walk spd</td><td x-text="r.build.summary.walk_speed + '%'"></td></tr>
+            <tr><td>Poison</td><td x-text="r.build.summary.poison"></td>
+                <td>HP regen</td><td x-text="r.build.summary.health_regen_raw"></td></tr>
           </table>
-          <strong>Cycle:</strong>
-          <div x-show="r.build.cycle">
-            <span x-text="(r.build.cycle?.rotation || []).join(' → ')"></span>
-            <div>DPS: <span x-text="Math.round(r.build.cycle?.dps || 0).toLocaleString()"></span>
-              · sustained: <span x-text="r.build.cycle?.sustainable ? '✓' : '✗'"></span></div>
+          <div x-show="r.build.cycle" class="cycle-row">
+            <strong>Cycle:</strong> <span x-text="(r.build.cycle?.rotation || []).join(' → ')"></span>
+            — DPS <span x-text="Math.round(r.build.cycle?.dps || 0).toLocaleString()"></span>
+            <span x-text="r.build.cycle?.sustainable ? '✓' : '✗'"></span>
           </div>
-          <strong>Spells</strong>
-          <table class="stats">
-            <template x-for="s in (r.build.spells || [])">
-              <tr>
-                <td x-text="`[${s.slot}] ${s.name}`"></td>
-                <td x-text="s.cost ? s.cost.toFixed(1) + ' mp' : ''"></td>
-                <td x-text="Math.round(s.display_value).toLocaleString()"></td>
-              </tr>
-            </template>
-          </table>
+          <details><summary>Spells</summary>
+            <table class="stats">
+              <template x-for="s in (r.build.spells || [])">
+                <tr><td x-text="`[${s.slot}] ${s.name}`"></td>
+                    <td x-text="s.cost ? s.cost.toFixed(1) + ' mp' : ''"></td>
+                    <td x-text="Math.round(s.display_value).toLocaleString()"></td></tr>
+              </template>
+            </table>
+          </details>
         </div>
       </div>
     </div>
