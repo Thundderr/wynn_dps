@@ -21,8 +21,8 @@ function app() {
     atreeNodes: [],
     selectedAtree: [],
     atreeFilter: "",
-    allowCrafted: true,
-    craftBudget: 30,
+    allowCrafted: false,          // off by default; on = thorough crafted search
+    craftBudget: 120,             // seconds — used only when allowCrafted=true
     topK: 3,
     pool: 15,
     busy: false,

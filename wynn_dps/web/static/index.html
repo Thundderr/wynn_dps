@@ -66,8 +66,10 @@
 <div class="card compact">
   <h2>Run</h2>
   <div class="run-row">
-    <label class="inline"><input type="checkbox" x-model="allowCrafted"> crafted</label>
-    <label class="inline">budget<input type="number" min="5" max="120" x-model.number="craftBudget" style="width:50px"></label>
+    <label class="inline" :title="'When ON, Stage B runs a thorough crafted-item search on each open slot (may take 1-2 min).'">
+      <input type="checkbox" x-model="allowCrafted"> crafted (thorough)
+    </label>
+    <label class="inline" x-show="allowCrafted">budget (s)<input type="number" min="30" max="600" x-model.number="craftBudget" style="width:60px"></label>
     <label class="inline">top-K<input type="number" min="1" max="20" x-model.number="topK" style="width:40px"></label>
     <label class="inline">pool<input type="number" min="4" max="50" x-model.number="pool" style="width:40px"></label>
     <button @click="optimize()" :disabled="busy || !weapon" class="primary">

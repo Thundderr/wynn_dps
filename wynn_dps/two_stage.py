@@ -53,8 +53,11 @@ def optimize_two_stage(
     top_k: int = 5,
     pool: int = 6,
     use_tomes: bool = True,
-    craft_budget_s: float = 30.0,
-    min_dps_improvement_pct: float = 1.0,
+    craft_budget_s: float = 60.0,
+    min_dps_improvement_pct: float = 0.1,
+    craft_restarts: int = 20,
+    craft_iters_per_start: int = 120,
+    recipes_per_slot: int = 5,
     verbose: bool = True,
 ) -> TwoStageResult:
     """Two-stage build optimizer. See module docstring for details.
@@ -89,99 +92,127 @@ def optimize_two_stage(
     deadline = t_start + craft_budget_s + (time.monotonic() - t_start)
     locked = locked_items or {}
 
+    armor_slot_order = ["helmet", "chestplate", "leggings", "boots"]
+    acc_slot_order = ["ring1", "ring2", "bracelet", "necklace"]
+    slots_to_try = armor_slot_order + acc_slot_order
+    stats = {"recipes_tried": 0, "swaps": 0, "slots_skipped_time": 0}
+
     for r_idx, baseline in enumerate(base_results):
         build = baseline.build
         baseline_dps = baseline.dps
         improved_build = build
         improved_dps = baseline_dps
+        if verbose:
+            print(f"\n  result #{r_idx + 1} baseline DPS: {baseline_dps:,.0f}",
+                  flush=True)
 
-        all_armor = list(build.armor)
-        all_acc = list(build.accessories)
-        slots_to_try = ["helmet", "chestplate", "leggings", "boots",
-                        "ring1", "ring2", "bracelet", "necklace"]
         for slot in slots_to_try:
             if slot in locked:
-                continue  # user-locked, skip
+                continue
             if time.monotonic() > deadline:
-                break
+                stats["slots_skipped_time"] += 1
+                if verbose:
+                    print(f"    [{slot}] skipped — craft budget exhausted",
+                          flush=True)
+                continue
             recipe_type = _SLOT_TO_RECIPE_TYPE.get(slot)
             if not recipe_type:
                 continue
+            # All recipes within the level band (not just the top one).
             slot_recipes = [r for r in recipes
                             if r.item_type == recipe_type
                             and r.level_max <= level
-                            and r.level_min >= max(1, level - 30)]
+                            and r.level_min >= max(1, level - 40)]
+            slot_recipes.sort(key=lambda r: -r.level_max)
+            slot_recipes = slot_recipes[:recipes_per_slot]
             if not slot_recipes:
                 continue
+            if verbose:
+                print(f"    [{slot}] trying {len(slot_recipes)} recipes…",
+                      flush=True)
 
-            # Pick top recipe by level (closest to character level for max stats).
-            slot_recipes.sort(key=lambda r: -r.level_max)
-            recipe = slot_recipes[0]
+            best_for_slot = None
+            best_for_slot_dps = improved_dps
+            best_recipe_name = None
 
-            # Run a fast craft optimizer for this recipe.
-            try:
-                craft_res = optimize_craft(
-                    ingredients, recipe, wclass=wclass, char_level=level,
-                    n_restarts=3, max_iters_per_start=40, top_k=1,
-                    verbose=False,
+            for recipe in slot_recipes:
+                if time.monotonic() > deadline:
+                    break
+                try:
+                    craft_res = optimize_craft(
+                        ingredients, recipe, wclass=wclass, char_level=level,
+                        n_restarts=craft_restarts,
+                        max_iters_per_start=craft_iters_per_start,
+                        top_k=1, verbose=False,
+                        context_build=improved_build, context_slot=slot,
+                    )
+                except Exception as e:
+                    if verbose:
+                        print(f"      {recipe.name}: FAILED ({e})", flush=True)
+                    continue
+                stats["recipes_tried"] += 1
+                if not craft_res:
+                    continue
+                best_crafted = craft_res[0].crafted
+
+                # Swap into trial build
+                new_armor = list(improved_build.armor)
+                new_acc = list(improved_build.accessories)
+                if slot in armor_slot_order:
+                    idx = armor_slot_order.index(slot)
+                    if idx < len(new_armor):
+                        new_armor[idx] = best_crafted
+                    else:
+                        new_armor.append(best_crafted)
+                else:
+                    idx = acc_slot_order.index(slot)
+                    if idx < len(new_acc):
+                        new_acc[idx] = best_crafted
+                    else:
+                        new_acc.append(best_crafted)
+
+                trial = Build(
+                    weapon=improved_build.weapon, armor=new_armor,
+                    accessories=new_acc, powders=improved_build.powders,
+                    skillpoints=improved_build.skillpoints,
+                    atree_bonuses=improved_build.atree_bonuses,
+                    atree_short_bonuses=improved_build.atree_short_bonuses,
+                    atree_spells=improved_build.atree_spells,
+                    atree_spell_cost_delta=improved_build.atree_spell_cost_delta,
+                    atree_damage_mults=improved_build.atree_damage_mults,
                 )
-            except Exception as e:
-                if verbose:
-                    print(f"  [skip {slot}] craft optimizer failed: {e}",
-                          flush=True)
-                continue
-            if not craft_res:
-                continue
-            best = craft_res[0].crafted
+                if not meets_constraints(trial, constraints):
+                    continue
+                trial_dps = compute_melee_dps(trial)
+                if trial_dps > best_for_slot_dps:
+                    best_for_slot_dps = trial_dps
+                    best_for_slot = trial
+                    best_recipe_name = recipe.name
 
-            # Try swapping this slot's item with the crafted one in the
-            # current improved_build.
-            new_armor = list(improved_build.armor)
-            new_acc = list(improved_build.accessories)
-            armor_slot_order = ["helmet", "chestplate", "leggings", "boots"]
-            acc_slot_order = ["ring1", "ring2", "bracelet", "necklace"]
-            if slot in armor_slot_order:
-                idx = armor_slot_order.index(slot)
-                if idx < len(new_armor):
-                    new_armor[idx] = best
-                else:
-                    new_armor.append(best)
-            else:
-                idx = acc_slot_order.index(slot)
-                if idx < len(new_acc):
-                    new_acc[idx] = best
-                else:
-                    new_acc.append(best)
-
-            trial = Build(
-                weapon=improved_build.weapon, armor=new_armor, accessories=new_acc,
-                powders=improved_build.powders,
-                skillpoints=improved_build.skillpoints,
-                atree_bonuses=improved_build.atree_bonuses,
-                atree_short_bonuses=improved_build.atree_short_bonuses,
-                atree_spells=improved_build.atree_spells,
-                atree_spell_cost_delta=improved_build.atree_spell_cost_delta,
-                atree_damage_mults=improved_build.atree_damage_mults,
-            )
-            if not meets_constraints(trial, constraints):
-                continue
-            trial_dps = compute_melee_dps(trial)
-            if trial_dps > improved_dps * (1 + min_dps_improvement_pct / 100):
+            if best_for_slot is not None and best_for_slot_dps > improved_dps * (
+                    1 + min_dps_improvement_pct / 100):
+                stats["swaps"] += 1
                 if verbose:
-                    print(f"  ✓ result #{r_idx+1} {slot}: "
-                          f"{improved_dps:,.0f} → {trial_dps:,.0f} "
-                          f"(+{(trial_dps/improved_dps-1)*100:.1f}%) "
-                          f"via crafted {recipe.name}", flush=True)
+                    print(f"      ✓ swap {slot}: "
+                          f"{improved_dps:,.0f} → {best_for_slot_dps:,.0f} "
+                          f"(+{(best_for_slot_dps/improved_dps-1)*100:.1f}%) "
+                          f"via {best_recipe_name}", flush=True)
                 swap_log.append({
                     "result_idx": r_idx, "slot": slot,
-                    "recipe": recipe.name,
-                    "old_dps": improved_dps, "new_dps": trial_dps,
+                    "recipe": best_recipe_name,
+                    "old_dps": improved_dps,
+                    "new_dps": best_for_slot_dps,
                 })
-                improved_build = trial
-                improved_dps = trial_dps
+                improved_build = best_for_slot
+                improved_dps = best_for_slot_dps
 
         final_results.append(Result(dps=improved_dps, build=improved_build,
                                      tomes=baseline.tomes))
+    if verbose:
+        print(f"\n  Stage B stats: {stats['recipes_tried']} recipes tried, "
+              f"{stats['swaps']} swaps made, "
+              f"{stats['slots_skipped_time']} slot(s) skipped due to time.",
+              flush=True)
 
     final_results.sort(key=lambda r: r.dps, reverse=True)
     return TwoStageResult(

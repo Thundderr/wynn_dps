@@ -27,14 +27,22 @@ def _skill_for_recipe(recipe: Recipe) -> str:
 
 def _ingredient_damage_vector(ing: Ingredient) -> tuple[float, ...]:
     m = ing.ids_max
+    # Support both wynnbuilder short keys (legacy) and v3 API keys.
+    def _g(*keys):
+        for k in keys:
+            if k in m:
+                return m[k]
+        return 0
     return (
-        m.get("mdRaw", 0),
-        m.get("mdPct", 0),
-        m.get("str", 0), m.get("dex", 0),
-        m.get("critDamPct", 0),
-        m.get("eDamPct", 0) + m.get("tDamPct", 0) + m.get("wDamPct", 0)
-        + m.get("fDamPct", 0) + m.get("aDamPct", 0),
-        -m.get("atkTier", 0),
+        _g("mdRaw", "rawMainAttackDamage"),
+        _g("mdPct", "mainAttackDamage"),
+        _g("str", "rawStrength"),
+        _g("dex", "rawDexterity"),
+        _g("critDamPct", "criticalDamageBonus"),
+        (_g("eDamPct", "earthDamage") + _g("tDamPct", "thunderDamage")
+         + _g("wDamPct", "waterDamage") + _g("fDamPct", "fireDamage")
+         + _g("aDamPct", "airDamage")),
+        -_g("atkTier", "rawAttackSpeed"),
     )
 
 
@@ -80,14 +88,51 @@ def _score_placement(
     char_level: int,
     atk_speed: str,
     material_tiers: tuple[int, int],
+    context_build: Build | None = None,   # for armor/ring: swap-in scoring
+    context_slot: str | None = None,
 ) -> tuple[float, CraftedItem]:
+    """Score a crafted placement.
+
+    If `context_build` is provided, the crafted item replaces that slot in
+    the full build and we compute FULL build DPS. This is essential for
+    armor/rings/etc. which have no standalone DPS.
+
+    Otherwise we treat the crafted item as a standalone weapon (the default
+    for Task A's craft-a-weapon flow).
+    """
     crafted = build_crafted_item(recipe, placement, material_tiers, atk_speed)
-    # Evaluate crafted item as a weapon-only "build" (no armor/accessories)
-    # so the DPS calc is self-contained. We pass empty armor/acc so the
-    # crafted weapon is graded on its own damage output.
+
+    # ---- Context-scoring (for non-weapon crafts via Stage B) ----
+    if context_build is not None and context_slot is not None:
+        armor_slot_order = ["helmet", "chestplate", "leggings", "boots"]
+        acc_slot_order = ["ring1", "ring2", "bracelet", "necklace"]
+        new_armor = list(context_build.armor)
+        new_acc = list(context_build.accessories)
+        if context_slot in armor_slot_order:
+            idx = armor_slot_order.index(context_slot)
+            if idx < len(new_armor): new_armor[idx] = crafted
+            else: new_armor.append(crafted)
+        elif context_slot in acc_slot_order:
+            idx = acc_slot_order.index(context_slot)
+            if idx < len(new_acc): new_acc[idx] = crafted
+            else: new_acc.append(crafted)
+        trial = Build(
+            weapon=context_build.weapon, armor=new_armor, accessories=new_acc,
+            powders=context_build.powders,
+            skillpoints=context_build.skillpoints,
+            atree_bonuses=context_build.atree_bonuses,
+            atree_short_bonuses=context_build.atree_short_bonuses,
+            atree_spells=context_build.atree_spells,
+            atree_spell_cost_delta=context_build.atree_spell_cost_delta,
+            atree_damage_mults=context_build.atree_damage_mults,
+        )
+        if not requirements_met(trial):
+            return 0.0, crafted
+        return compute_melee_dps(trial), crafted
+
+    # ---- Standalone-weapon scoring (Task A default) ----
     build = Build(weapon=crafted, armor=[], accessories=[],
                   powders=[], skillpoints={})
-    # Assign skill points to meet the crafted item's own reqs.
     sps = enumerate_assignments([crafted], level=char_level)
     best_dps = 0.0
     best_build = build
@@ -98,7 +143,6 @@ def _score_placement(
             continue
         b = Build(weapon=crafted, armor=[], accessories=[],
                   powders=[], skillpoints=sp.assigned)
-        # Optimize weapon powders (all-same-element tier-6).
         best_p: list = []
         best_p_dps = -1.0
         if crafted.powder_slots > 0:
@@ -132,6 +176,8 @@ def optimize_craft(
     top_k: int = 5,
     seed: int = 0,
     verbose: bool = True,
+    context_build: Build | None = None,
+    context_slot: str | None = None,
 ) -> list[CraftResult]:
     t_start = time.monotonic()
     pool = _filter_pool(ingredients, recipe, char_level)
@@ -164,7 +210,8 @@ def optimize_craft(
             for start in range(n_restarts):
                 placement: list[Ingredient] = [rng.choice(pool) for _ in range(6)]
                 cur_dps, cur_crafted = _score_placement(
-                    placement, recipe, wclass, char_level, atk, mat)
+                    placement, recipe, wclass, char_level, atk, mat,
+                    context_build=context_build, context_slot=context_slot)
 
                 improved = True
                 iters = 0
@@ -182,7 +229,8 @@ def optimize_craft(
                                 continue
                             placement[slot] = cand
                             d, c = _score_placement(
-                                placement, recipe, wclass, char_level, atk, mat)
+                                placement, recipe, wclass, char_level, atk, mat,
+                                context_build=context_build, context_slot=context_slot)
                             if d > best_dps + 1e-6:
                                 best_dps = d
                                 best_cand = cand
@@ -231,7 +279,9 @@ def optimize_craft(
                     placement[i], placement[j] = placement[j], placement[i]
                     d, c = _score_placement(placement, recipe, wclass,
                                              char_level, r.atk_speed,
-                                             r.material_tiers)
+                                             r.material_tiers,
+                                             context_build=context_build,
+                                             context_slot=context_slot)
                     if d > cur + 1e-6:
                         cur = d
                         r = CraftResult(dps=d, crafted=c,
